@@ -2,7 +2,7 @@
 
 Dokumentasi praktikum Modul 2 IoT: konfigurasi WiFi mode Station (STA) dan Access Point (AP) berbasis ESP8266 (NodeMCU).
 
-> Catatan: Di modul pake memakai ESP32 (`WiFi.h`), padahal praktikum pake ESP8266 (`ESP8266WiFi.h`) dengan SSID `POCO X5 5G`.
+> Catatan: Di modul pake ESP32 (`WiFi.h`), padahal praktikum pake ESP8266 (`ESP8266WiFi.h`) dengan SSID `POCO X5 5G`.
 
 ---
 
