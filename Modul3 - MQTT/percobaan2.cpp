@@ -1,72 +1,207 @@
 #include <ESP8266WiFi.h>
-#include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
-#include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-const char* ssid     = "POXO X5 5G";
+// =========================
+// WiFi
+// =========================
+const char* ssid = "POCO X5 5G";
 const char* password = "cobaliathplu";
 
-const char* mqttServer = "broker.hivemq.com";
-const int   mqttPort   = 1883;
-const char* mqttTopic  = "unsoed/tk245004/Kelompok7/sensor";
+// =========================
+// HiveMQ Cloud
+// =========================
+const char* mqttServer =
+  "97904deac669490f8ece9602e0e13b99.s1.eu.hivemq.cloud";
 
-WiFiClient espClient;
+const int mqttPort = 8883;
+
+// Username dan password dari HiveMQ Cloud
+const char* mqttUsername = "Kelompok7";
+const char* mqttPassword = "Kelompok7";
+
+// Topic MQTT
+const char* mqttTopic =
+  "unsoed/tk245004/kelompok7/sensor";
+
+// =========================
+// MQTT Client
+// =========================
+WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
+
+// =========================
+// Hubungkan WiFi
+// =========================
 void hubungkanWiFi() {
+
   WiFi.begin(ssid, password);
+
   Serial.print("Menghubungkan ke WiFi");
+
   while (WiFi.status() != WL_CONNECTED) {
+
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\nWiFi berhasil terhubung!");
+
+  Serial.println();
+  Serial.println("WiFi berhasil terhubung!");
+
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
 }
 
-void hubungkanMQTT() {
-  while (!client.connected()) {
-    Serial.print("Menghubungkan ke broker MQTT...");
-    String clientId = "ESP32Client-" + String(random(0xffff), HEX);
 
-    if (client.connect(clientId.c_str())) {
-      Serial.println("berhasil terhubung!");
+// =========================
+// Hubungkan MQTT
+// =========================
+void hubungkanMQTT() {
+
+  while (!client.connected()) {
+
+    Serial.println();
+    Serial.print("Menghubungkan ke broker MQTT...");
+
+    // Client ID dibuat unik
+    String clientId =
+      "ESP8266Client-" +
+      String(ESP.getChipId(), HEX);
+
+    Serial.print(" Client ID: ");
+    Serial.println(clientId);
+
+    // Connect dengan username dan password HiveMQ
+    if (client.connect(
+          clientId.c_str(),
+          mqttUsername,
+          mqttPassword)) {
+
+      Serial.println("MQTT berhasil terhubung!");
+
+      Serial.print("Broker : ");
+      Serial.println(mqttServer);
+
+      Serial.print("Port   : ");
+      Serial.println(mqttPort);
+
+      Serial.println("================================");
+
     } else {
-      Serial.print("gagal, rc=");
-      Serial.print(client.state());
-      Serial.println(" coba lagi dalam 2 detik");
+
+      Serial.print("MQTT gagal, rc=");
+      Serial.println(client.state());
+
+      Serial.println("Mencoba lagi dalam 2 detik...");
+
       delay(2000);
     }
   }
 }
 
+
+// =========================
+// Setup
+// =========================
 void setup() {
+
   Serial.begin(115200);
+
+  delay(1000);
+
+  Serial.println();
+  Serial.println("================================");
+  Serial.println(" ESP8266 MQTT - HiveMQ Cloud");
+  Serial.println("================================");
+
+  // -------------------------
+  // WiFi
+  // -------------------------
   hubungkanWiFi();
-  client.setServer(mqttServer, mqttPort);
+
+  // -------------------------
+  // TLS
+  // -------------------------
+  // Untuk testing.
+  // Tidak melakukan validasi sertifikat TLS.
+  espClient.setInsecure();
+
+  // -------------------------
+  // MQTT Server
+  // -------------------------
+  client.setServer(
+    mqttServer,
+    mqttPort
+  );
+
+  // Hubungkan ke MQTT
+  hubungkanMQTT();
 }
 
+
+// =========================
+// Loop
+// =========================
 void loop() {
+
+  // Pastikan MQTT tetap terhubung
   if (!client.connected()) {
+
+    Serial.println();
+    Serial.println("MQTT terputus!");
+
     hubungkanMQTT();
   }
+
+  // Wajib dipanggil terus-menerus
   client.loop();
 
-  // Membuat data sensor dalam format JSON
+
+  // =========================
+  // Membuat data sensor JSON
+  // =========================
+
   JsonDocument doc;
+
   doc["suhu"] = 28.5;
   doc["kelembaban"] = 65.0;
 
   char buffer[128];
+
   serializeJson(doc, buffer);
 
-  // Mempublikasikan data ke topic MQTT
-  client.publish(mqttTopic, buffer);
-  Serial.print("Data terkirim ke topic ");
-  Serial.print(mqttTopic);
-  Serial.print(": ");
-  Serial.println(buffer);
 
-  delay(5000);   // publish data setiap 5 detik
+  // =========================
+  // Publish MQTT
+  // =========================
+
+  bool berhasil =
+    client.publish(
+      mqttTopic,
+      buffer
+    );
+
+
+  if (berhasil) {
+
+    Serial.println();
+    Serial.println("Data berhasil dikirim!");
+
+    Serial.print("Topic   : ");
+    Serial.println(mqttTopic);
+
+    Serial.print("Payload : ");
+    Serial.println(buffer);
+
+  } else {
+
+    Serial.println();
+    Serial.println("Gagal mengirim data!");
+  }
+
+
+  // Publish setiap 5 detik
+  delay(5000);
 }
