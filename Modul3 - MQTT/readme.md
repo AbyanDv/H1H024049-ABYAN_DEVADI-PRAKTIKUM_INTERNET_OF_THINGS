@@ -119,11 +119,12 @@ void loop() {
 
 ### A. Penjelasan Singkat Percobaan
 
-Menghubungkan ESP8266 ke WiFi lalu ke broker MQTT publik `broker.hivemq.com:1883`, kemudian mem-publish data dummy sensor dalam format JSON ke topic `unsoed/tk245004/Kelompok7/sensor` setiap 5 detik. Data yang dipublish diverifikasi via aplikasi client MQTT (MQTT Explorer / HiveMQ WebSocket Client) yang subscribe ke topic yang sama.
+Menghubungkan ESP8266 ke WiFi lalu ke broker HiveMQ Cloud (`97904deac669490f8ece9602e0e13b99.s1.eu.hivemq.cloud:8883`) secara TLS dengan username/password, kemudian mem-publish data dummy sensor dalam format JSON ke topic `unsoed/tk245004/kelompok7/sensor` setiap 5 detik. Serial Monitor menampilkan status koneksi, Client ID, dan hasil publish (`Data berhasil dikirim!` / `Gagal mengirim data!`). Data yang dipublish diverifikasi via aplikasi client MQTT yang subscribe ke topic yang sama.
 
 ### B. Library & Dependencies
 
 - **ESP8266WiFi** (`ESP8266WiFi.h`, bawaan core ESP8266)
+- **WiFiClientSecure** (`WiFiClientSecure.h`, bawaan core ESP8266, untuk MQTTS port 8883)
 - **PubSubClient by Nick O'Leary** (`PubSubClient.h`, install via Library Manager)
 - **ArduinoJson by Benoit Blanchon** (`ArduinoJson.h`, install via Library Manager)
 
@@ -131,104 +132,247 @@ Menghubungkan ESP8266 ke WiFi lalu ke broker MQTT publik `broker.hivemq.com:1883
 
 ```cpp
 #include <ESP8266WiFi.h>
-#include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
-#include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-const char* ssid     = "POXO X5 5G";
+// =========================
+// WiFi
+// =========================
+const char* ssid = "POCO X5 5G";
 const char* password = "cobaliathplu";
 
-const char* mqttServer = "broker.hivemq.com";
-const int   mqttPort   = 1883;
-const char* mqttTopic  = "unsoed/tk245004/Kelompok7/sensor";
+// =========================
+// HiveMQ Cloud
+// =========================
+const char* mqttServer =
+  "97904deac669490f8ece9602e0e13b99.s1.eu.hivemq.cloud";
 
-WiFiClient espClient;
+const int mqttPort = 8883;
+
+// Username dan password dari HiveMQ Cloud
+const char* mqttUsername = "Kelompok7";
+const char* mqttPassword = "Kelompok7";
+
+// Topic MQTT
+const char* mqttTopic =
+  "unsoed/tk245004/kelompok7/sensor";
+
+// =========================
+// MQTT Client
+// =========================
+WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
+
+// =========================
+// Hubungkan WiFi
+// =========================
 void hubungkanWiFi() {
+
   WiFi.begin(ssid, password);
+
   Serial.print("Menghubungkan ke WiFi");
+
   while (WiFi.status() != WL_CONNECTED) {
+
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\nWiFi berhasil terhubung!");
+
+  Serial.println();
+  Serial.println("WiFi berhasil terhubung!");
+
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
 }
 
-void hubungkanMQTT() {
-  while (!client.connected()) {
-    Serial.print("Menghubungkan ke broker MQTT...");
-    String clientId = "ESP32Client-" + String(random(0xffff), HEX);
 
-    if (client.connect(clientId.c_str())) {
-      Serial.println("berhasil terhubung!");
+// =========================
+// Hubungkan MQTT
+// =========================
+void hubungkanMQTT() {
+
+  while (!client.connected()) {
+
+    Serial.println();
+    Serial.print("Menghubungkan ke broker MQTT...");
+
+    // Client ID dibuat unik
+    String clientId =
+      "ESP8266Client-" +
+      String(ESP.getChipId(), HEX);
+
+    Serial.print(" Client ID: ");
+    Serial.println(clientId);
+
+    // Connect dengan username dan password HiveMQ
+    if (client.connect(
+          clientId.c_str(),
+          mqttUsername,
+          mqttPassword)) {
+
+      Serial.println("MQTT berhasil terhubung!");
+
+      Serial.print("Broker : ");
+      Serial.println(mqttServer);
+
+      Serial.print("Port   : ");
+      Serial.println(mqttPort);
+
+      Serial.println("================================");
+
     } else {
-      Serial.print("gagal, rc=");
-      Serial.print(client.state());
-      Serial.println(" coba lagi dalam 2 detik");
+
+      Serial.print("MQTT gagal, rc=");
+      Serial.println(client.state());
+
+      Serial.println("Mencoba lagi dalam 2 detik...");
+
       delay(2000);
     }
   }
 }
 
+
+// =========================
+// Setup
+// =========================
 void setup() {
+
   Serial.begin(115200);
+
+  delay(1000);
+
+  Serial.println();
+  Serial.println("================================");
+  Serial.println(" ESP8266 MQTT - HiveMQ Cloud");
+  Serial.println("================================");
+
+  // -------------------------
+  // WiFi
+  // -------------------------
   hubungkanWiFi();
-  client.setServer(mqttServer, mqttPort);
+
+  // -------------------------
+  // TLS
+  // -------------------------
+  // Untuk testing.
+  // Tidak melakukan validasi sertifikat TLS.
+  espClient.setInsecure();
+
+  // -------------------------
+  // MQTT Server
+  // -------------------------
+  client.setServer(
+    mqttServer,
+    mqttPort
+  );
+
+  // Hubungkan ke MQTT
+  hubungkanMQTT();
 }
 
+
+// =========================
+// Loop
+// =========================
 void loop() {
+
+  // Pastikan MQTT tetap terhubung
   if (!client.connected()) {
+
+    Serial.println();
+    Serial.println("MQTT terputus!");
+
     hubungkanMQTT();
   }
+
+  // Wajib dipanggil terus-menerus
   client.loop();
 
-  // Membuat data sensor dalam format JSON
+
+  // =========================
+  // Membuat data sensor JSON
+  // =========================
+
   JsonDocument doc;
+
   doc["suhu"] = 28.5;
   doc["kelembaban"] = 65.0;
 
   char buffer[128];
+
   serializeJson(doc, buffer);
 
-  // Mempublikasikan data ke topic MQTT
-  client.publish(mqttTopic, buffer);
-  Serial.print("Data terkirim ke topic ");
-  Serial.print(mqttTopic);
-  Serial.print(": ");
-  Serial.println(buffer);
 
-  delay(5000);   // publish data setiap 5 detik
+  // =========================
+  // Publish MQTT
+  // =========================
+
+  bool berhasil =
+    client.publish(
+      mqttTopic,
+      buffer
+    );
+
+
+  if (berhasil) {
+
+    Serial.println();
+    Serial.println("Data berhasil dikirim!");
+
+    Serial.print("Topic   : ");
+    Serial.println(mqttTopic);
+
+    Serial.print("Payload : ");
+    Serial.println(buffer);
+
+  } else {
+
+    Serial.println();
+    Serial.println("Gagal mengirim data!");
+  }
+
+
+  // Publish setiap 5 detik
+  delay(5000);
 }
 ```
 
 - `#include <ESP8266WiFi.h>`: Pustaka WiFi ESP8266.
+- `#include <WiFiClientSecure.h>`: Pustaka TLS. Wajib karena HiveMQ Cloud memakai MQTTS port 8883.
 - `#include <PubSubClient.h>`: Pustaka MQTT publish-subscribe.
-- `#include <ArduinoJson.h>`: Pustaka JSON (di file tercatat ganda, cukup satu kali).
-- `#include <ESP8266HTTPClient.h> + <WiFiClientSecure.h>`: Sisa include dari percobaan HTTP, tidak dipakai pada jalur MQTT.
-- `const char* mqttServer / mqttPort`: Alamat broker publik dan port non-TLS 1883 sesuai modul.
+- `#include <ArduinoJson.h>`: Pustaka JSON.
+- `const char* ssid / password`: Nama dan kata sandi WiFi tujuan.
+- `const char* mqttServer / mqttPort`: Alamat cluster HiveMQ Cloud dan port TLS 8883 (bukan 1883 publik tanpa enkripsi).
+- `const char* mqttUsername / mqttPassword`: Kredensial autentikasi HiveMQ Cloud (`Kelompok7` / `Kelompok7`).
 - `const char* mqttTopic`: Alamat topic unik berisi nama kelompok agar tidak tercampur dengan kelompok lain.
-- `WiFiClient espClient; + PubSubClient client(espClient)`: Membuat koneksi TCP polos lalu dibungkus sebagai client MQTT.
-- `hubungkanWiFi()`: Fungsi blokir sampai `WL_CONNECTED`, mencetak progres `.` tiap 500 ms.
-- `hubungkanMQTT()`: Loop sampai `client.connected()`. Membuat `clientId` acak (`ESP32Client-XXXX`) agar tidak ditolak broker karena ID kembar.
+- `WiFiClientSecure espClient; + PubSubClient client(espClient)`: Membuat koneksi TLS lalu dibungkus sebagai client MQTT.
+- `hubungkanWiFi()`: Fungsi blokir sampai `WL_CONNECTED`, mencetak progres `.` tiap 500 ms, lalu menampilkan IP via `WiFi.localIP()`.
+- `hubungkanMQTT()`: Loop sampai `client.connected()`. Membuat `clientId` unik dari `ESP.getChipId()` (`ESP8266Client-XXXXXX`) agar tidak ditolak broker karena ID kembar.
+- `client.connect(clientId, mqttUsername, mqttPassword)`: Connect dengan autentikasi username/password HiveMQ Cloud.
+- `espClient.setInsecure()`: Melewati validasi sertifikat TLS (praktis untuk uji, tidak untuk produksi).
 - `client.setServer(mqttServer, mqttPort)`: Mendaftarkan alamat broker yang akan dihubungi.
 - `client.loop()`: Memproses paket keep-alive/incoming MQTT, wajib dipanggil tiap iterasi.
 - `JsonDocument doc; + serializeJson(doc, buffer)`: Membuat JSON lalu menulisnya ke array char `buffer[128]` (format yang diminta `publish`).
-- `client.publish(mqttTopic, buffer)`: Mengirim payload ke broker pada topic tersebut.
+- `bool berhasil = client.publish(mqttTopic, buffer)`: Mengirim payload ke broker dan menyimpan status kirim.
 - `delay(5000)`: Interval publish setiap 5 detik.
 
 ### D. Penjelasan Percabangan / Conditional
 
 1.  `while (WiFi.status() != WL_CONNECTED)` di `hubungkanWiFi()`:
-    - Menahan program sampai WiFi tersambung, mencetak `.` sebagai indikator.
+    - Menahan program sampai WiFi tersambung, mencetak `.` sebagai indikator, lalu menampilkan IP via `WiFi.localIP()`.
 2.  `while (!client.connected())` di `hubungkanMQTT()`:
-    - Selama belum konek ke broker, coba `client.connect(clientId)`.
-    - Jika `true`: cetak `berhasil terhubung!` dan keluar loop.
+    - Selama belum konek ke broker, coba `client.connect(clientId, mqttUsername, mqttPassword)`.
+    - `clientId` dibuat dari `ESP.getChipId()` (`ESP8266Client-XXXXXX`) sehingga unik per chip tanpa acak tiap retry.
+    - Jika `true`: cetak `MQTT berhasil terhubung!` + broker + port, keluar loop.
     - Jika `false`: cetak return code `client.state()`, tunggu 2 detik, ulangi.
 3.  `if (!client.connected())` di `loop()`:
-    - Pengecekan tiap iterasi. Jika broker putus di tengah jalan, panggil ulang `hubungkanMQTT()` sebelum publish berikutnya.
+    - Pengecekan tiap iterasi. Jika broker putus, cetak `MQTT terputus!` lalu panggil ulang `hubungkanMQTT()` sebelum publish berikutnya.
+4.  `if (berhasil)` hasil `client.publish()`:
+    - Jika `true`: cetak `Data berhasil dikirim!` + topic + payload.
+    - `else`: cetak `Gagal mengirim data!` (misal buffer kepanjangan / koneksi baru putus).
 
 ---
 
@@ -289,7 +433,7 @@ Kode modifikasi (bagian `loop()`, file `percobaan1.cpp` tidak diubah):
 
 #### 1. Apa fungsi dari topic pada protokol MQTT, dan mengapa topic yang digunakan perlu dibuat unik?
 
-Topic adalah label/alamat hierarkis (`unsoed/tk245004/Kelompok7/sensor`) tempat pesan di-publish. Broker meneruskan pesan hanya ke client yang subscribe ke topic (persis/filter wildcard) tersebut. Harus unik (misal sisipkan nama kelompok) karena broker publik dipakai banyak orang — jika generik (`sensor`), data antar kelompok tercampur / tertimpa dan verifikasi di MQTT Explorer jadi ambigu.
+Topic adalah label/alamat hierarkis (`unsoed/tk245004/kelompok7/sensor`) tempat pesan di-publish. Broker meneruskan pesan hanya ke client yang subscribe ke topic (persis/filter wildcard) tersebut. Harus unik (misal sisipkan nama kelompok) karena broker dipakai banyak orang — jika generik (`sensor`), data antar kelompok tercampur / tertimpa dan verifikasi di client subscriber jadi ambigu.
 
 #### 2. Jelaskan fungsi dari perintah `client.loop()` yang dipanggil pada setiap iterasi `loop()`!
 
@@ -297,14 +441,14 @@ Topic adalah label/alamat hierarkis (`unsoed/tk245004/Kelompok7/sensor`) tempat 
 
 #### 3. Apa yang akan terjadi apabila koneksi ke broker MQTT terputus di tengah program berjalan?
 
-Pada iterasi `loop()` berikutnya kondisi `if (!client.connected())` menjadi `true`, sehingga `hubungkanMQTT()` dipanggil: program masuk loop retry (coba connect tiap 2 detik dengan `clientId` baru) sampai tersambung lagi. Selama putus, `publish` tidak dikirim; setelah pulih, publish tiap 5 detik berlanjut normal.
+Pada iterasi `loop()` berikutnya kondisi `if (!client.connected())` menjadi `true`, sehingga program mencetak `MQTT terputus!` lalu memanggil `hubungkanMQTT()`: masuk loop retry (coba `connect` dengan `clientId` dari `ESP.getChipId()` + username/password tiap 2 detik) sampai tersambung lagi. Selama putus, `publish` mengembalikan `false` sehingga Serial mencetak `Gagal mengirim data!`; setelah pulih, publish tiap 5 detik berlanjut dengan `Data berhasil dikirim!`.
 
 ### 3.3 Pertanyaan Analisis (3.7)
 
 #### 1. Uraikan hasil tugas pada praktikum yang telah dilakukan pada setiap percobaan!
 
 - **Percobaan 3A (HTTP):** ESP berhasil gabung WiFi (`WiFi berhasil terhubung!`); Serial menampilkan `Mengirim data: {"suhu":28.5,"kelembaban":65.0}` tiap 10 detik; server menjawab `Kode Response HTTP: 200` + body echo berisi JSON yang sama sebagai bukti diterima; tidak ada error kompilasi/pengiriman.
-- **Percobaan 3B (MQTT):** ESP berhasil gabung WiFi lalu broker (`berhasil terhubung!`); Serial menampilkan `Data terkirim ke topic unsoed/tk245004/Kelompok7/sensor: {"suhu":28.5,"kelembaban":65.0}` tiap 5 detik; payload yang sama muncul di MQTT Explorer/HiveMQ client yang subscribe ke topic identik.
+- **Percobaan 3B (MQTT):** ESP berhasil gabung WiFi (`WiFi berhasil terhubung!` + IP) lalu broker HiveMQ Cloud (`MQTT berhasil terhubung!` + nama broker + port 8883); Serial menampilkan `Data berhasil dikirim!` + `Topic   : unsoed/tk245004/kelompok7/sensor` + `Payload : {"suhu":28.5,"kelembaban":65.0}` tiap 5 detik; payload yang sama muncul di client subscriber yang subscribe ke topic identik.
 
 #### 2. Bandingkan besar overhead data dan pola komunikasi antara protokol HTTP dan MQTT berdasarkan hasil percobaan yang telah dilakukan!
 
@@ -339,8 +483,8 @@ graph LR
 ```mermaid
 graph LR
     ESP[NodeMCU ESP8266 - Publisher] -- "WiFi POCO X5 5G" --> ROUTER[Hotspot / Router]
-    ROUTER -- "publish JSON" --> BROKER[broker.hivemq.com:1883<br/>topic unsoed/tk245004/Kelompok7/sensor]
-    BROKER -- "forward topic" --> CLIENT[MQTT Explorer / HiveMQ Client<br/>Subscriber]
+    ROUTER -- "MQTTS TLS publish JSON" --> BROKER[HiveMQ Cloud 8883<br/>topic unsoed/tk245004/kelompok7/sensor]
+    BROKER -- "forward topic" --> CLIENT[MQTT Client Subscriber]
 ```
 
 ### Hasil Percobaan
@@ -353,6 +497,6 @@ Serial Monitor menampilkan `Mengirim data` → `Kode Response HTTP: 200` → `Is
 
 #### Output Percobaan 2 (MQTT)
 
-Serial Monitor menampilkan `Data terkirim ke topic ...` setiap 5 detik, dan payload identik tampil di aplikasi client MQTT yang subscribe ke topic yang sama.
+Serial Monitor menampilkan `MQTT berhasil terhubung!` sekali di awal, lalu `Data berhasil dikirim!` + `Topic` + `Payload` setiap 5 detik. Payload identik tampil di aplikasi client MQTT yang subscribe ke topic yang sama.
 
 ![Output Percobaan 2](img2.png)
